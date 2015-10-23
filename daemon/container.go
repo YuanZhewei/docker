@@ -17,6 +17,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
+	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/network"
@@ -123,6 +124,19 @@ func (container *Container) FromDisk() error {
 		return err
 	}
 	return container.readHostConfig()
+}
+
+func (container *Container) ApplyFilesystemQuota() error {
+	quota := uint64(container.hostConfig.FilesystemQuota)
+	if quota <= 0 {
+		return nil
+	}
+	err := container.daemon.driver.SetQuota(container.ID, quota)
+	if err == graphdriver.ErrNotImplemented {
+		return nil
+	} else {
+		return err
+	}
 }
 
 func (container *Container) toDisk() error {

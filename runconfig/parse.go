@@ -74,6 +74,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		flOomKillDisable  = cmd.Bool([]string{"-oom-kill-disable"}, false, "Disable OOM Killer")
 		flContainerIDFile = cmd.String([]string{"#cidfile", "-cidfile"}, "", "Write the container ID to the file")
 		flEntrypoint      = cmd.String([]string{"#entrypoint", "-entrypoint"}, "", "Overwrite the default ENTRYPOINT of the image")
+		flFilesystemQuota = cmd.String([]string{"-filesystem-quota"}, "", "Filesystem space limit")
 		flHostname        = cmd.String([]string{"h", "-hostname"}, "", "Container host name")
 		flMemoryString    = cmd.String([]string{"m", "-memory"}, "", "Memory limit")
 		flMemorySwap      = cmd.String([]string{"-memory-swap"}, "", "Total memory (memory + swap), '-1' to disable swap")
@@ -194,7 +195,14 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	if swappiness != -1 && (swappiness < 0 || swappiness > 100) {
 		return nil, nil, cmd, fmt.Errorf("Invalid value: %d. Valid memory swappiness range is 0-100", swappiness)
 	}
-
+	var filesystemQuota int64 = -1
+	if *flFilesystemQuota != "" {
+		var err error
+		filesystemQuota, err = units.RAMInBytes(*flFilesystemQuota)
+		if err != nil {
+			return nil, nil, cmd, err
+		}
+	}
 	var binds []string
 	// add any bind targets to the list of container volumes
 	for bind := range flVolumes.GetMap() {
@@ -359,6 +367,7 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		Dns:              flDns.GetAll(),
 		DnsSearch:        flDnsSearch.GetAll(),
 		ExtraHosts:       flExtraHosts.GetAll(),
+		FilesystemQuota:  filesystemQuota,
 		VolumesFrom:      flVolumesFrom.GetAll(),
 		NetworkMode:      netMode,
 		IpcMode:          ipcMode,

@@ -22,6 +22,7 @@ var (
 	// All registred drivers
 	drivers map[string]InitFunc
 
+	ErrNotImplemented = errors.New("Feature not implemented")
 	ErrNotSupported   = errors.New("driver not supported")
 	ErrPrerequisites  = errors.New("prerequisites for driver not satisfied (wrong filesystem?)")
 	ErrIncompatibleFS = fmt.Errorf("backing file system is unsupported for this graph driver")
@@ -63,6 +64,8 @@ type ProtoDriver interface {
 	// held by the driver, e.g., unmounting all layered filesystems
 	// known to this driver.
 	Cleanup() error
+	// Optional features, should ErrNotSupported if not supported
+	SetQuota(id string, limitInBytes uint64) error
 }
 
 // Driver is the interface for layered/snapshot file system drivers.

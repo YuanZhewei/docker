@@ -6,6 +6,7 @@ package btrfs
 #include <stdlib.h>
 #include <dirent.h>
 #include <btrfs/ioctl.h>
+#include <btrfs/ctree.h>
 */
 import "C"
 
@@ -41,6 +42,14 @@ func Init(home string, options []string) (graphdriver.Driver, error) {
 	}
 
 	if err := mount.MakePrivate(home); err != nil {
+		return nil, err
+	}
+
+	if err := quotaEnable(rootdir); err != nil {
+		return nil, err
+	}
+
+	if err := quotaRescan(rootdir); err != nil {
 		return nil, err
 	}
 
@@ -235,3 +244,72 @@ func (d *Driver) Exists(id string) bool {
 	_, err := os.Stat(dir)
 	return err == nil
 }
+
+func (d *Driver) SetQuota(id string, limitInBytes uint64) error {
+	path := d.subvolumesDirId(id)
+	if err := quotaEnable(path); err != nil {
+		return err
+	}
+
+	if err := subvolQuotaGroupLimit(path, limitInBytes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func quotaEnable(path string) error {
+	dir, err := openDir(path)
+	if err != nil {
+		return err
+	}
+	defer closeDir(dir)
+
+	var args C.struct_btrfs_ioctl_quota_ctl_args
+	args.cmd = C.BTRFS_QUOTA_CTL_ENABLE
+
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, getDirFd(dir), C.BTRFS_IOC_QUOTA_CTL,
+	uintptr(unsafe.Pointer(&args)))
+	if errno != 0 {
+		return fmt.Errorf("Failed to enable btrfs quota: %v", errno.Error())
+	}
+	return nil
+}
+
+func quotaRescan(path string) error {
+	dir, err := openDir(path)
+	if err != nil {
+		return err
+	}
+	defer closeDir(dir)
+
+	var args C.struct_btrfs_ioctl_quota_rescan_args
+
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, getDirFd(dir), C.BTRFS_IOC_QUOTA_RESCAN,
+	uintptr(unsafe.Pointer(&args)))
+	if errno != 0 {
+		return fmt.Errorf("Failed to rescan btrfs quota: %v", errno.Error())
+	}
+	return nil
+}
+
+func subvolQuotaGroupLimit(path string, limitInBytes uint64) error {
+	dir, err := openDir(path)
+	if err != nil {
+		return err
+	}
+	defer closeDir(dir)
+
+	var args C.struct_btrfs_ioctl_qgroup_limit_args
+	args.lim.flags |= C.BTRFS_QGROUP_LIMIT_MAX_RFER
+	args.lim.max_referenced = C.__u64(limitInBytes)
+
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, getDirFd(dir), C.BTRFS_IOC_QGROUP_LIMIT,
+	uintptr(unsafe.Pointer(&args)))
+	if errno != 0 {
+		return fmt.Errorf("Failed to set btrfs quota limits: %v", errno.Error())
+	}
+	return nil
+}
+
+

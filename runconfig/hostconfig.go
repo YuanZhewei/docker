@@ -241,6 +241,7 @@ type HostConfig struct {
 	Dns              []string
 	DnsSearch        []string
 	ExtraHosts       []string
+	FilesystemQuota  int64
 	VolumesFrom      []string
 	Devices          []DeviceMapping
 	NetworkMode      NetworkMode
