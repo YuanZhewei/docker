@@ -509,3 +509,7 @@ func useDirperm() bool {
 	})
 	return enableDirperm
 }
+
+func (d *Driver) SetQuota(id string, limitInBytes uint64) error {
+	return graphdriver.ErrNotImplemented
+}
