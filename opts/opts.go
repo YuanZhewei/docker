@@ -1,12 +1,30 @@
 package opts
 
+/*
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+int cmajor(__dev_t d) {
+	return major(d);
+}
+
+int cminor(__dev_t d) {
+	return minor(d);
+}
+*/
+import "C"
 import (
 	"fmt"
 	"net"
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
+	"unsafe"
 
 	flag "github.com/docker/docker/pkg/mflag"
 	"github.com/docker/docker/pkg/parsers"
@@ -231,6 +249,32 @@ func ValidateLink(val string) (string, error) {
 //    [host-dir:]container-path[:mode]
 func ValidateDevice(val string) (string, error) {
 	return validatePath(val, false)
+}
+
+func ValidateDeviceThrottle(val string) (string, error) {
+	splited := strings.SplitN(val, ":", 2)
+	if len(splited) != 2 {
+		return val, fmt.Errorf("bad format for device_throttle: %s", val)
+	}
+
+	if !strings.HasPrefix(splited[0], "/dev/") {
+		return val, fmt.Errorf("bad format for device_throttle: %s", val)
+	}
+
+	_, err := strconv.ParseUint(splited[1], 10, 0)
+	if err != nil {
+		return val, fmt.Errorf("invalid throttle for device: %s", val)
+	}
+
+	var stat C.struct_stat
+	path := C.CString(splited[0])
+	defer C.free(unsafe.Pointer(path))
+	if ret, _ := C.stat(path, &stat); ret != 0 {
+		return val, fmt.Errorf("failed to get stat for device: %s", val)
+	}
+
+	deviceThrottle := fmt.Sprintf("%d:%d %s", C.cmajor(stat.st_rdev), C.cminor(stat.st_rdev), splited[1])
+	return deviceThrottle, nil
 }
 
 // ValidatePath Validate a path for volumes

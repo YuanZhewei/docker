@@ -103,17 +103,21 @@ type NetworkInterface struct {
 
 // TODO Windows: Factor out ulimit.Rlimit
 type Resources struct {
-	Memory           int64            `json:"memory"`
-	MemorySwap       int64            `json:"memory_swap"`
-	CpuShares        int64            `json:"cpu_shares"`
-	CpusetCpus       string           `json:"cpuset_cpus"`
-	CpusetMems       string           `json:"cpuset_mems"`
-	CpuPeriod        int64            `json:"cpu_period"`
-	CpuQuota         int64            `json:"cpu_quota"`
-	BlkioWeight      int64            `json:"blkio_weight"`
-	Rlimits          []*ulimit.Rlimit `json:"rlimits"`
-	OomKillDisable   bool             `json:"oom_kill_disable"`
-	MemorySwappiness int64            `json:"memory_swappiness"`
+	Memory                       int64            `json:"memory"`
+	MemorySwap                   int64            `json:"memory_swap"`
+	CpuShares                    int64            `json:"cpu_shares"`
+	CpusetCpus                   string           `json:"cpuset_cpus"`
+	CpusetMems                   string           `json:"cpuset_mems"`
+	CpuPeriod                    int64            `json:"cpu_period"`
+	CpuQuota                     int64            `json:"cpu_quota"`
+	BlkioWeight                  int64            `json:"blkio_weight"`
+	BlkioThrottleReadBpsDevice   string           `json:"blkio_throttle_read_bps_device"`
+	BlkioThrottleWriteBpsDevice  string           `json:"blkio_throttle_write_bps_device"`
+	BlkioThrottleReadIOpsDevice  string           `json:"blkio_throttle_read_iops_device"`
+	BlkioThrottleWriteIOpsDevice string           `json:"blkio_throttle_write_iops_device"`
+	Rlimits                      []*ulimit.Rlimit `json:"rlimits"`
+	OomKillDisable               bool             `json:"oom_kill_disable"`
+	MemorySwappiness             int64            `json:"memory_swappiness"`
 }
 
 type ResourceStats struct {

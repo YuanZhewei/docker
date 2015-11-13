@@ -236,6 +236,9 @@ func (cli *DaemonCli) CmdDaemon(args ...string) error {
 	// daemon doesn't exit
 	serveAPIWait := make(chan error)
 	go func() {
+		for _, s := range commonFlags.Hosts {
+			fmt.Println("commonFlags.Hosts " + s)
+		}
 		if err := api.ServeApi(commonFlags.Hosts); err != nil {
 			logrus.Errorf("ServeAPI error: %v", err)
 			serveAPIWait <- err

@@ -64,6 +64,11 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		flLabelsFile  = opts.NewListOpts(nil)
 		flLoggingOpts = opts.NewListOpts(nil)
 
+		flBlkioThrottleReadBpsDevice   = opts.NewListOpts(opts.ValidateDeviceThrottle)
+		flBlkioThrottleWriteBpsDevice  = opts.NewListOpts(opts.ValidateDeviceThrottle)
+		flBlkioThrottleReadIOpsDevice  = opts.NewListOpts(opts.ValidateDeviceThrottle)
+		flBlkioThrottleWriteIOpsDevice = opts.NewListOpts(opts.ValidateDeviceThrottle)
+
 		flNetwork         = cmd.Bool([]string{"#n", "#-networking"}, true, "Enable networking for this container")
 		flPrivileged      = cmd.Bool([]string{"#privileged", "-privileged"}, false, "Give extended privileges to this container")
 		flPidMode         = cmd.String([]string{"-pid"}, "", "PID namespace to use")
@@ -98,6 +103,10 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	)
 
 	cmd.Var(&flAttach, []string{"a", "-attach"}, "Attach to STDIN, STDOUT or STDERR")
+	cmd.Var(&flBlkioThrottleReadBpsDevice, []string{"-blkio-throttle-read-bps-device"}, "Constrict read bps for blk device")
+	cmd.Var(&flBlkioThrottleWriteBpsDevice, []string{"-blkio-throttle-write-bps-device"}, "Constrict write bps for blk device")
+	cmd.Var(&flBlkioThrottleReadIOpsDevice, []string{"-blkio-throttle-read-iops-device"}, "Constrict read iops for blk device")
+	cmd.Var(&flBlkioThrottleWriteIOpsDevice, []string{"-blkio-throttle-write-iops-device"}, "Constrict write iops for blk device")
 	cmd.Var(&flVolumes, []string{"v", "-volume"}, "Bind mount a volume")
 	cmd.Var(&flLinks, []string{"#link", "-link"}, "Add link to another container")
 	cmd.Var(&flDevices, []string{"-device"}, "Add a host device to the container")
@@ -347,42 +356,46 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 	}
 
 	hostConfig := &HostConfig{
-		Binds:            binds,
-		ContainerIDFile:  *flContainerIDFile,
-		LxcConf:          lxcConf,
-		Memory:           flMemory,
-		MemorySwap:       MemorySwap,
-		CpuShares:        *flCpuShares,
-		CpuPeriod:        *flCpuPeriod,
-		CpusetCpus:       *flCpusetCpus,
-		CpusetMems:       *flCpusetMems,
-		CpuQuota:         *flCpuQuota,
-		BlkioWeight:      *flBlkioWeight,
-		OomKillDisable:   *flOomKillDisable,
-		MemorySwappiness: flSwappiness,
-		Privileged:       *flPrivileged,
-		PortBindings:     portBindings,
-		Links:            flLinks.GetAll(),
-		PublishAllPorts:  *flPublishAll,
-		Dns:              flDns.GetAll(),
-		DnsSearch:        flDnsSearch.GetAll(),
-		ExtraHosts:       flExtraHosts.GetAll(),
-		FilesystemQuota:  filesystemQuota,
-		VolumesFrom:      flVolumesFrom.GetAll(),
-		NetworkMode:      netMode,
-		IpcMode:          ipcMode,
-		PidMode:          pidMode,
-		UTSMode:          utsMode,
-		Devices:          deviceMappings,
-		CapAdd:           NewCapList(flCapAdd.GetAll()),
-		CapDrop:          NewCapList(flCapDrop.GetAll()),
-		GroupAdd:         flGroupAdd.GetAll(),
-		RestartPolicy:    restartPolicy,
-		SecurityOpt:      flSecurityOpt.GetAll(),
-		ReadonlyRootfs:   *flReadonlyRootfs,
-		Ulimits:          flUlimits.GetList(),
-		LogConfig:        LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
-		CgroupParent:     *flCgroupParent,
+		Binds:                        binds,
+		ContainerIDFile:              *flContainerIDFile,
+		LxcConf:                      lxcConf,
+		Memory:                       flMemory,
+		MemorySwap:                   MemorySwap,
+		CpuShares:                    *flCpuShares,
+		CpuPeriod:                    *flCpuPeriod,
+		CpusetCpus:                   *flCpusetCpus,
+		CpusetMems:                   *flCpusetMems,
+		CpuQuota:                     *flCpuQuota,
+		BlkioWeight:                  *flBlkioWeight,
+		BlkioThrottleReadBpsDevice:   flBlkioThrottleReadBpsDevice.GetAll(),
+		BlkioThrottleWriteBpsDevice:  flBlkioThrottleWriteBpsDevice.GetAll(),
+		BlkioThrottleReadIOpsDevice:  flBlkioThrottleReadIOpsDevice.GetAll(),
+		BlkioThrottleWriteIOpsDevice: flBlkioThrottleWriteIOpsDevice.GetAll(),
+		OomKillDisable:               *flOomKillDisable,
+		MemorySwappiness:             flSwappiness,
+		Privileged:                   *flPrivileged,
+		PortBindings:                 portBindings,
+		Links:                        flLinks.GetAll(),
+		PublishAllPorts:              *flPublishAll,
+		Dns:                          flDns.GetAll(),
+		DnsSearch:                    flDnsSearch.GetAll(),
+		ExtraHosts:                   flExtraHosts.GetAll(),
+		FilesystemQuota:              filesystemQuota,
+		VolumesFrom:                  flVolumesFrom.GetAll(),
+		NetworkMode:                  netMode,
+		IpcMode:                      ipcMode,
+		PidMode:                      pidMode,
+		UTSMode:                      utsMode,
+		Devices:                      deviceMappings,
+		CapAdd:                       NewCapList(flCapAdd.GetAll()),
+		CapDrop:                      NewCapList(flCapDrop.GetAll()),
+		GroupAdd:                     flGroupAdd.GetAll(),
+		RestartPolicy:                restartPolicy,
+		SecurityOpt:                  flSecurityOpt.GetAll(),
+		ReadonlyRootfs:               *flReadonlyRootfs,
+		Ulimits:                      flUlimits.GetList(),
+		LogConfig:                    LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
+		CgroupParent:                 *flCgroupParent,
 	}
 
 	applyExperimentalFlags(expFlags, config, hostConfig)

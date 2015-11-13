@@ -112,6 +112,18 @@ lxc.cgroup.cpu.cfs_quota_us = {{.Resources.CpuQuota}}
 {{if .Resources.BlkioWeight}}
 lxc.cgroup.blkio.weight = {{.Resources.BlkioWeight}}
 {{end}}
+{{if .Resources.BlkioThrottleReadBpsDevice}}
+lxc.cgroup.blkio.throttle.read_bps_device = {{.Resources.BlkioThrottleReadBpsDevice}}
+{{end}}
+{{if .Resources.BlkioThrottleWriteBpsDevice}}
+lxc.cgroup.blkio.throttle.write_bps_device = {{.Resources.BlkioThrottleWriteBpsDevice}}
+{{end}}
+{{if .Resources.BlkioThrottleReadIOpsDevice}}
+lxc.cgroup.blkio.throttle.read_iops_device = {{.Resources.BlkioThrottleReadIOpsDevice}}
+{{end}}
+{{if .Resources.BlkioThrottleWriteIOpsDevice}}
+lxc.cgroup.blkio.throttle.write_iops_device = {{.Resources.BlkioThrottleWriteIOpsDevice}}
+{{end}}
 {{if .Resources.OomKillDisable}}
 lxc.cgroup.memory.oom_control = {{.Resources.OomKillDisable}}
 {{end}}

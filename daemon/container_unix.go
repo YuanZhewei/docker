@@ -253,6 +253,11 @@ func populateCommand(c *Container, env []string) error {
 		}
 	}
 
+	throttleReadBpsDevice := strings.Join(c.hostConfig.BlkioThrottleReadBpsDevice, "\n")
+	throttleWriteBpsDevice := strings.Join(c.hostConfig.BlkioThrottleWriteBpsDevice, "\n")
+	throttleReadIOpsDevice := strings.Join(c.hostConfig.BlkioThrottleReadIOpsDevice, "\n")
+	throttleWriteIOpsDevice := strings.Join(c.hostConfig.BlkioThrottleWriteIOpsDevice, "\n")
+
 	for _, limit := range ulimits {
 		rl, err := limit.GetRlimit()
 		if err != nil {
@@ -262,14 +267,18 @@ func populateCommand(c *Container, env []string) error {
 	}
 
 	resources := &execdriver.Resources{
-		Memory:           c.hostConfig.Memory,
-		MemorySwap:       c.hostConfig.MemorySwap,
-		CpuShares:        c.hostConfig.CpuShares,
-		CpusetCpus:       c.hostConfig.CpusetCpus,
-		CpusetMems:       c.hostConfig.CpusetMems,
-		CpuPeriod:        c.hostConfig.CpuPeriod,
-		CpuQuota:         c.hostConfig.CpuQuota,
-		BlkioWeight:      c.hostConfig.BlkioWeight,
+		Memory:                       c.hostConfig.Memory,
+		MemorySwap:                   c.hostConfig.MemorySwap,
+		CpuShares:                    c.hostConfig.CpuShares,
+		CpusetCpus:                   c.hostConfig.CpusetCpus,
+		CpusetMems:                   c.hostConfig.CpusetMems,
+		CpuPeriod:                    c.hostConfig.CpuPeriod,
+		CpuQuota:                     c.hostConfig.CpuQuota,
+		BlkioWeight:                  c.hostConfig.BlkioWeight,
+		BlkioThrottleReadBpsDevice:   throttleReadBpsDevice,
+		BlkioThrottleWriteBpsDevice:  throttleWriteBpsDevice,
+		BlkioThrottleReadIOpsDevice:  throttleReadIOpsDevice,
+		BlkioThrottleWriteIOpsDevice: throttleWriteIOpsDevice,
 		Rlimits:          rlimits,
 		OomKillDisable:   c.hostConfig.OomKillDisable,
 		MemorySwappiness: -1,

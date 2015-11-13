@@ -57,6 +57,10 @@ func SetupCgroups(container *configs.Config, c *Command) error {
 		container.Cgroups.CpuPeriod = c.Resources.CpuPeriod
 		container.Cgroups.CpuQuota = c.Resources.CpuQuota
 		container.Cgroups.BlkioWeight = c.Resources.BlkioWeight
+		container.Cgroups.BlkioThrottleReadBpsDevice = c.Resources.BlkioThrottleReadBpsDevice
+		container.Cgroups.BlkioThrottleWriteBpsDevice = c.Resources.BlkioThrottleWriteBpsDevice
+		container.Cgroups.BlkioThrottleReadIOpsDevice = c.Resources.BlkioThrottleReadIOpsDevice
+		container.Cgroups.BlkioThrottleWriteIOpsDevice = c.Resources.BlkioThrottleWriteIOpsDevice
 		container.Cgroups.OomKillDisable = c.Resources.OomKillDisable
 		container.Cgroups.MemorySwappiness = c.Resources.MemorySwappiness
 	}
