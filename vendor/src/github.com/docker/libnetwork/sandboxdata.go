@@ -6,7 +6,9 @@ import (
 	"sync"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/libnetwork/netlabel"
 	"github.com/docker/libnetwork/sandbox"
+	"github.com/docker/libnetwork/types"
 )
 
 type epHeap []*endpoint
@@ -76,6 +78,14 @@ func (s *sandboxData) addEndpoint(ep *endpoint) error {
 	ep.Lock()
 	joinInfo := ep.joinInfo
 	ifaces := ep.iFaces
+	var tc *types.TrafficControl
+	if opt, ok := ep.generic[netlabel.TrafficControl]; ok {
+		if t, ok := opt.(*types.TrafficControl); ok {
+			tc = t
+		} else {
+			return fmt.Errorf("Invalid endpoint config")
+		}
+	}
 	ep.Unlock()
 
 	sb := s.sandbox()
@@ -87,6 +97,9 @@ func (s *sandboxData) addEndpoint(ep *endpoint) error {
 		if i.addrv6.IP.To16() != nil {
 			ifaceOptions = append(ifaceOptions,
 				sb.InterfaceOptions().AddressIPv6(&i.addrv6))
+		}
+		if tc != nil {
+			ifaceOptions = append(ifaceOptions, sb.InterfaceOptions().TrafficControl(tc))
 		}
 
 		if err := sb.AddInterface(i.srcName, i.dstPrefix, ifaceOptions...); err != nil {

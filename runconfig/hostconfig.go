@@ -18,6 +18,13 @@ type NetworkMode string
 
 type IpcMode string
 
+//type TrafficControl struct {
+//	Rate    int64
+//	Ceil    int64
+//	Buffer  int64
+//	Cbuffer int64
+//}
+
 // IsPrivate indicates whether container use it's private ipc stack
 func (n IpcMode) IsPrivate() bool {
 	return !(n.IsHost() || n.IsContainer())
@@ -262,6 +269,11 @@ type HostConfig struct {
 	LogConfig                    LogConfig
 	CgroupParent                 string // Parent cgroup.
 	ConsoleSize                  [2]int // Initial console size on Windows
+	//TrafficControl               *TrafficControl
+	TcRate    int64
+	TcCeil    int64
+	TcBuffer  int64
+	TcCbuffer int64
 }
 
 func MergeConfigs(config *Config, hostConfig *HostConfig) *ContainerConfigWrapper {

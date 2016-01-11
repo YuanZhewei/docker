@@ -35,6 +35,8 @@ const (
 
 	// OverlayNeighborIP constant represents overlay driver neighbor IP
 	OverlayNeighborIP = DriverPrefix + ".overlay.neighbor_ip"
+
+	TrafficControl = DriverPrefix + ".traffix_control"
 )
 
 // Key extracts the key portion of the label

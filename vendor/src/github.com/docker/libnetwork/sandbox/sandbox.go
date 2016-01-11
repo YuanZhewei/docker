@@ -89,6 +89,8 @@ type IfaceOptionSetter interface {
 
 	// Address returns an option setter to set interface routes.
 	Routes([]*net.IPNet) IfaceOption
+
+	TrafficControl(*types.TrafficControl) IfaceOption
 }
 
 // Info represents all possible information that

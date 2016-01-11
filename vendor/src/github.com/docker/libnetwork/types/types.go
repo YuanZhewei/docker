@@ -11,6 +11,13 @@ import (
 // UUID represents a globally unique ID of various resources like network and endpoint
 type UUID string
 
+type TrafficControl struct {
+	Rate    int64
+	Ceil    int64
+	Buffer  int64
+	Cbuffer int64
+}
+
 // TransportPort represent a local Layer 4 endpoint
 type TransportPort struct {
 	Proto Protocol

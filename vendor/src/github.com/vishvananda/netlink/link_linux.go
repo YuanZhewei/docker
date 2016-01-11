@@ -3,9 +3,11 @@ package netlink
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"syscall"
+	"unsafe"
 
 	"github.com/vishvananda/netlink/nl"
 )
@@ -84,6 +86,137 @@ func LinkSetMTU(link Link, mtu int) error {
 
 	_, err := req.Execute(syscall.NETLINK_ROUTE, 0)
 	return err
+}
+
+func LinkSetQDisc(link Link, handle, defcls int) error {
+	base := link.Attrs()
+	ensureIndex(base)
+	index := int(base.Index)
+
+	req := nl.NewTcNetlinkRequest(syscall.RTM_NEWQDISC, syscall.NLM_F_EXCL|syscall.NLM_F_CREATE|syscall.NLM_F_ACK, syscall.AF_UNSPEC, index, handle<<16, nl.TC_H_ROOT, 0)
+
+	k := make([]byte, 4)
+	copy(k[:], "htb")
+	qdisc := nl.NewRtAttr(nl.TCA_KIND, k)
+	req.AddData(qdisc)
+
+	options := nl.NewRtAttr(nl.TCA_OPTIONS, nil)
+	opt := nl.NewTcHtbGlob(10, 3, defcls)
+	optdata := make([]byte, nl.NlmsgAlignOf(nl.SizeofTcHtbGlob))
+	copy(optdata[:], opt.Serialize())
+	nl.NewRtAttrChild(options, nl.TCA_HTB_INIT, optdata)
+	req.AddData(options)
+
+	_, err := req.Execute(syscall.NETLINK_ROUTE, 0)
+	return err
+}
+
+// At least, rate should not be 0
+func LinkSetClass(link Link, parent, classid, rate, ceil, buffer, cbuffer int) error {
+	var mtu uint32 = 1600
+	var cellLog, ccellLog int = -1, -1
+	var rtab, ctab [256]uint32
+
+	base := link.Attrs()
+	ensureIndex(base)
+	index := int(base.Index)
+
+	req := nl.NewTcNetlinkRequest(syscall.RTM_NEWTCLASS, syscall.NLM_F_EXCL|syscall.NLM_F_CREATE|syscall.NLM_F_ACK, syscall.AF_UNSPEC, index, classid, parent, 0)
+
+	k := make([]byte, 4)
+	copy(k[:], "htb")
+	class := nl.NewRtAttr(nl.TCA_KIND, k)
+	req.AddData(class)
+
+	if ceil == 0 {
+		ceil = rate
+	}
+	if buffer == 0 {
+		buffer = rate/nl.HZ + int(mtu)
+	}
+	if cbuffer == 0 {
+		cbuffer = ceil/nl.HZ + int(mtu)
+	}
+
+	options := nl.NewRtAttr(nl.TCA_OPTIONS, nil)
+
+	opt := nl.NewTcHtbOpt(rate, ceil, buffer, cbuffer)
+	var r int
+	if r, rtab = opt.Rate.TcCalcRtable(cellLog, mtu); r < 0 {
+		return errors.New("htb: failed to calculate rate table.")
+	}
+	opt.Buffer = nl.TcCalcXmittime(uint32(rate), uint32(buffer))
+	if r, ctab = opt.Ceil.TcCalcRtable(ccellLog, mtu); r < 0 {
+		return errors.New("htb: failed to calculate ceil rate table.")
+	}
+	opt.Cbuffer = nl.TcCalcXmittime(uint32(ceil), uint32(cbuffer))
+	optdata := make([]byte, nl.NlmsgAlignOf(nl.SizeofTcHtbOpt))
+	copy(optdata[:], opt.Serialize())
+	nl.NewRtAttrChild(options, nl.TCA_HTB_PARMS, optdata)
+
+	nl.NewRtAttrChild(options, nl.TCA_HTB_RTAB, (*(*[unsafe.Sizeof(rtab)]byte)(unsafe.Pointer(&rtab)))[:])
+	nl.NewRtAttrChild(options, nl.TCA_HTB_CTAB, (*(*[unsafe.Sizeof(ctab)]byte)(unsafe.Pointer(&ctab)))[:])
+
+	req.AddData(options)
+
+	_, err := req.Execute(syscall.NETLINK_ROUTE, 0)
+	return err
+}
+
+func htons(p uint16) uint16 {
+	data := make([]byte, 2)
+	binary.BigEndian.PutUint16(data, p)
+	return binary.LittleEndian.Uint16(data)
+}
+
+func LinkSetFilter(link Link, parent, prio, protocal, flowid int) error {
+	base := link.Attrs()
+	ensureIndex(base)
+	index := int(base.Index)
+
+	p := htons(uint16(protocal))
+	req := nl.NewTcNetlinkRequest(syscall.RTM_NEWTFILTER, syscall.NLM_F_EXCL|syscall.NLM_F_CREATE|syscall.NLM_F_ACK, syscall.AF_UNSPEC, index, 0, parent, int(nl.TcHMake(uint32(prio)<<16, uint32(p))))
+
+	k := make([]byte, 4)
+	copy(k[:], "u32")
+	class := nl.NewRtAttr(nl.TCA_KIND, k)
+	req.AddData(class)
+
+	options := nl.NewRtAttr(nl.TCA_OPTIONS, nil)
+	f := nl.Uint32Attr(uint32(flowid))
+	nl.NewRtAttrChild(options, nl.TCA_U32_CLASSID, f)
+
+	sel := nl.NewTcU32Sel(nl.TC_U32_TERMINAL, 1, 12)
+	seldata := make([]byte, nl.NlmsgAlignOf(nl.SizeofTcU32Sel+nl.SizeofTcU32Key))
+	copy(seldata[:], sel.Serialize())
+	nl.NewRtAttrChild(options, nl.TCA_U32_SEL, seldata)
+
+	req.AddData(options)
+
+	_, err := req.Execute(syscall.NETLINK_ROUTE, 0)
+	return err
+}
+
+func LinkSetTrafficControl(link Link, rate, ceil, buffer, cbuffer int) error {
+	var err error
+	var tcHandle, tcDefaultCls int = 0x01, 0x20
+	err = LinkSetQDisc(link, tcHandle, tcDefaultCls)
+	if err != nil {
+		return err
+	}
+	tcParent := tcHandle << 16
+	tcClassid := tcParent | 0x01
+	err = LinkSetClass(link, tcParent, tcClassid, rate, ceil, buffer, cbuffer)
+	if err != nil {
+		return err
+	}
+
+	var tcPrio int = 1
+	err = LinkSetFilter(link, tcParent, tcPrio, nl.ETH_P_IP, tcClassid)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // LinkSetName sets the name of the link device.

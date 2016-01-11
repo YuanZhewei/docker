@@ -1,10 +1,21 @@
 // Package nl has low level primitives for making Netlink calls.
 package nl
 
+/*
+#include <linux/rtnetlink.h>
+#include <linux/netlink.h>
+#include <linux/pkt_sched.h>
+#include <linux/pkt_cls.h>
+#include <linux/param.h>
+#include <linux/if_ether.h>
+*/
+import "C"
+
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"sync/atomic"
 	"syscall"
@@ -13,12 +24,122 @@ import (
 
 const (
 	// Family type definitions
-	FAMILY_ALL = syscall.AF_UNSPEC
-	FAMILY_V4  = syscall.AF_INET
-	FAMILY_V6  = syscall.AF_INET6
+	FAMILY_ALL         = syscall.AF_UNSPEC
+	FAMILY_V4          = syscall.AF_INET
+	FAMILY_V6          = syscall.AF_INET6
+	SizeofTCMsg        = C.sizeof_struct_tcmsg
+	SizeofTcHtbGlob    = C.sizeof_struct_tc_htb_glob
+	SizeofTcHtbOpt     = C.sizeof_struct_tc_htb_opt
+	SizeofTcU32Sel     = C.sizeof_struct_tc_u32_sel
+	SizeofTcU32Key     = C.sizeof_struct_tc_u32_key
+	TC_H_ROOT          = C.TC_H_ROOT
+	TCA_KIND           = C.TCA_KIND
+	TCA_OPTIONS        = C.TCA_OPTIONS
+	TCA_HTB_INIT       = C.TCA_HTB_INIT
+	TCA_HTB_PARMS      = C.TCA_HTB_PARMS
+	TCA_HTB_RTAB       = C.TCA_HTB_RTAB
+	TCA_HTB_CTAB       = C.TCA_HTB_CTAB
+	TC_H_MAJ_MASK      = C.TC_H_MAJ_MASK
+	TC_H_MIN_MASK      = C.TC_H_MIN_MASK
+	TC_U32_TERMINAL    = C.TC_U32_TERMINAL
+	TCA_U32_CLASSID    = C.TCA_U32_CLASSID
+	TCA_U32_SEL        = C.TCA_U32_SEL
+	ETH_P_IP           = C.ETH_P_IP
+	TIME_UNITS_PER_SEC = 1000000
 )
 
 var nextSeqNr uint32
+var HZ int
+var ClockFactor, TickInUsec float64 = 1, 1
+var TcInit bool = false
+
+type TCMsg struct {
+	Family  uint8
+	X_pad1  uint8
+	X_pad2  uint16
+	Ifindex int32
+	Handle  uint32
+	Parent  uint32
+	Info    uint32
+}
+
+type TcHtbGlob struct {
+	Version      uint32
+	Rate2quantum uint32
+	Defcls       uint32
+	Debug        uint32
+	Pkts         uint32
+}
+
+type TcRatespec struct {
+	Log         uint8
+	X__reserved uint8
+	Overhead    uint16
+	Align       int16
+	Mpu         uint16
+	Rate        uint32
+}
+
+type TcHtbOpt struct {
+	Rate    TcRatespec
+	Ceil    TcRatespec
+	Buffer  uint32
+	Cbuffer uint32
+	Quantum uint32
+	Level   uint32
+	Prio    uint32
+}
+
+type TcU32Sel struct {
+	Flags     uint8
+	Offshift  uint8
+	Nkeys     uint8
+	Pad_cgo_0 [1]byte
+	Offmask   uint16
+	Off       uint16
+	Offoff    int16
+	Hoff      int16
+	Hmask     uint32
+	Keys      TcU32Key
+}
+
+type TcU32Key struct {
+	Mask    uint32
+	Val     uint32
+	Off     int32
+	Offmask int32
+}
+
+func init() {
+	var t2us, us2t, clockRes uint32
+	var line string
+	if data, err := ioutil.ReadFile("/proc/net/psched"); err != nil {
+		return
+	} else {
+		line = string(data)
+	}
+
+	if n, err := fmt.Sscanf(line, "%x %x %x", &t2us, &us2t, &clockRes); n != 3 || err != nil {
+		return
+	}
+
+	if t2us == 1000000 {
+		HZ = int(us2t)
+	} else {
+		HZ = int(t2us)
+	}
+	if HZ == 0 {
+		HZ = C.HZ
+	}
+
+	if clockRes == 1000000000 {
+		t2us = us2t
+	}
+
+	ClockFactor = float64(clockRes) / TIME_UNITS_PER_SEC
+	TickInUsec = float64(t2us) / float64(us2t) * ClockFactor
+	TcInit = true
+}
 
 // GetIPFamily returns the family type of a net.IP.
 func GetIPFamily(ip net.IP) int {
@@ -72,6 +193,115 @@ type IfInfomsg struct {
 	syscall.IfInfomsg
 }
 
+func NewTCMsg(family, handle, parent, index int) *TCMsg {
+	return &TCMsg{
+		Family:  uint8(family),
+		Handle:  uint32(handle << 16),
+		Parent:  uint32(parent),
+		Ifindex: int32(index),
+	}
+}
+
+func (msg *TCMsg) Len() int {
+	return SizeofTCMsg
+}
+
+func (msg *TCMsg) Serialize() []byte {
+	return (*(*[SizeofTCMsg]byte)(unsafe.Pointer(msg)))[:]
+}
+
+func NewTcHtbGlob(rate2quantum, version, defcls int) *TcHtbGlob {
+	return &TcHtbGlob{
+		Version:      uint32(version),
+		Rate2quantum: uint32(rate2quantum),
+		Defcls:       uint32(defcls),
+	}
+}
+
+func (opt *TcHtbGlob) Len() int {
+	return SizeofTcHtbGlob
+}
+
+func (opt *TcHtbGlob) Serialize() []byte {
+	return (*(*[SizeofTcHtbGlob]byte)(unsafe.Pointer(opt)))[:]
+}
+
+func NewTcHtbOpt(rate, ceil, buffer, cbuffer int) *TcHtbOpt {
+	return &TcHtbOpt{
+		Rate: TcRatespec{
+			Rate: uint32(rate),
+		},
+		Ceil: TcRatespec{
+			Rate: uint32(ceil),
+		},
+		Buffer:  uint32(buffer),
+		Cbuffer: uint32(cbuffer),
+	}
+}
+
+func (opt *TcHtbOpt) Len() int {
+	return SizeofTcHtbOpt
+}
+
+func (opt *TcHtbOpt) Serialize() []byte {
+	return (*(*[SizeofTcHtbOpt]byte)(unsafe.Pointer(opt)))[:]
+}
+
+func TcAdjustSize(sz, mpu uint32) uint32 {
+	if sz < mpu {
+		sz = mpu
+	}
+	return sz
+}
+
+func TcCoreTime2Tick(time uint32) uint32 {
+	return uint32(float64(time) * TickInUsec)
+}
+
+func TcCalcXmittime(rate, size uint32) uint32 {
+	return TcCoreTime2Tick(uint32(TIME_UNITS_PER_SEC * (float64(size) / float64(rate))))
+}
+
+func (r *TcRatespec) TcCalcRtable(cellLog int, mtu uint32) (int, [256]uint32) {
+	var rtab [256]uint32
+	var bps, mpu uint32 = r.Rate, uint32(r.Mpu)
+	if mtu == 0 {
+		mtu = 2047
+	}
+	if cellLog < 0 {
+		cellLog = 0
+		for (mtu >> uint8(cellLog)) > 255 {
+			cellLog++
+		}
+	}
+	for i := range rtab {
+		sz := TcAdjustSize((uint32(i)+1)<<uint8(cellLog), mpu)
+		rtab[i] = TcCalcXmittime(bps, sz)
+	}
+
+	r.Align = -1
+	r.Log = uint8(cellLog)
+	return cellLog, rtab
+}
+
+func NewTcU32Sel(flags, nkeys, off int) *TcU32Sel {
+	return &TcU32Sel{
+		Flags: uint8(flags),
+		Nkeys: uint8(nkeys),
+		Keys: TcU32Key{
+			Off: int32(off),
+		},
+	}
+}
+
+func (sel *TcU32Sel) Len() int {
+	return SizeofTcU32Sel
+}
+
+func (sel *TcU32Sel) Serialize() []byte {
+	return (*(*[SizeofTcU32Sel + SizeofTcU32Key]byte)(unsafe.Pointer(sel)))[:]
+}
+
 // Create an IfInfomsg with family specified
 func NewIfInfomsg(family int) *IfInfomsg {
 	return &IfInfomsg{
@@ -95,6 +325,14 @@ func (msg *IfInfomsg) Len() int {
 
 func rtaAlignOf(attrlen int) int {
 	return (attrlen + syscall.RTA_ALIGNTO - 1) & ^(syscall.RTA_ALIGNTO - 1)
+}
+
+func NlmsgAlignOf(nlmsglen int) int {
+	return nlmsgAlignOf(nlmsglen)
+}
+
+func nlmsgAlignOf(nlmsglen int) int {
+	return (nlmsglen + syscall.NLMSG_ALIGNTO - 1) & ^(syscall.NLMSG_ALIGNTO - 1)
 }
 
 func NewIfInfomsgChild(parent *RtAttr, family int) *IfInfomsg {
@@ -167,9 +405,50 @@ func (a *RtAttr) Serialize() []byte {
 	return buf
 }
 
+type CommonNetlinkRequest interface {
+	Serialize() []byte
+}
+
 type NetlinkRequest struct {
 	syscall.NlMsghdr
 	Data []NetlinkRequestData
+}
+
+type TcNetlinkRequest struct {
+	hdr  syscall.NlMsghdr
+	tc   TCMsg
+	Data []NetlinkRequestData
+}
+
+func (req *TcNetlinkRequest) Len() int {
+	return int(req.hdr.Len)
+}
+
+func (req *TcNetlinkRequest) Serialize() []byte {
+	lenOfhdr := nlmsgAlignOf(syscall.SizeofNlMsghdr) + SizeofTCMsg
+	length := lenOfhdr
+	dataBytes := make([][]byte, len(req.Data))
+	for i, data := range req.Data {
+		dataBytes[i] = data.Serialize()
+		length = nlmsgAlignOf(length) + len(dataBytes[i])
+	}
+	req.hdr.Len = uint32(length)
+	b := make([]byte, length)
+	hdr := (*(*[syscall.SizeofNlMsghdr + SizeofTCMsg]byte)(unsafe.Pointer(req)))[:]
+
+	next := lenOfhdr
+	copy(b[0:next], hdr)
+	for _, data := range dataBytes {
+		copy(b[next:next+len(data)], data)
+		next = nlmsgAlignOf(next) + len(data)
+	}
+	return b
+}
+
+func (req *TcNetlinkRequest) AddData(data NetlinkRequestData) {
+	if data != nil {
+		req.Data = append(req.Data, data)
+	}
 }
 
 // Serialize the Netlink Request into a byte array
@@ -243,6 +522,62 @@ done:
 				if error == 0 {
 					break done
 				}
+				fmt.Println("Error ", error)
+				return nil, syscall.Errno(-error)
+			}
+			if resType != 0 && m.Header.Type != resType {
+				continue
+			}
+			res = append(res, m.Data)
+			if m.Header.Flags&syscall.NLM_F_MULTI == 0 {
+				break done
+			}
+		}
+	}
+	return res, nil
+}
+
+func (req *TcNetlinkRequest) Execute(sockType int, resType uint16) ([][]byte, error) {
+	s, err := getNetlinkSocket(sockType)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+
+	if err := s.Send(req); err != nil {
+		return nil, err
+	}
+
+	pid, err := s.GetPid()
+	if err != nil {
+		return nil, err
+	}
+
+	var res [][]byte
+
+done:
+	for {
+		msgs, err := s.Receive()
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range msgs {
+			if m.Header.Seq != req.hdr.Seq {
+				return nil, fmt.Errorf("Wrong Seq nr %d, expected 1", m.Header.Seq)
+			}
+			if m.Header.Pid != pid {
+				return nil, fmt.Errorf("Wrong pid %d, expected %d", m.Header.Pid, pid)
+			}
+			if m.Header.Type == syscall.NLMSG_DONE {
+				break done
+			}
+			if m.Header.Type == syscall.NLMSG_ERROR {
+				native := NativeEndian()
+				error := int32(native.Uint32(m.Data[0:4]))
+				if error == 0 {
+					break done
+				}
+				fmt.Println("Error ", error)
 				return nil, syscall.Errno(-error)
 			}
 			if resType != 0 && m.Header.Type != resType {
@@ -271,9 +606,31 @@ func NewNetlinkRequest(proto, flags int) *NetlinkRequest {
 	}
 }
 
+func NewTcNetlinkRequest(proto, flags, family, index, handle, parent, info int) *TcNetlinkRequest {
+	return &TcNetlinkRequest{
+		hdr: syscall.NlMsghdr{
+			Len:   uint32(syscall.SizeofNlMsghdr),
+			Type:  uint16(proto),
+			Flags: syscall.NLM_F_REQUEST | uint16(flags),
+			Seq:   atomic.AddUint32(&nextSeqNr, 1),
+		},
+		tc: TCMsg{
+			Family:  uint8(family),
+			Ifindex: int32(index),
+			Handle:  uint32(handle),
+			Parent:  uint32(parent),
+			Info:    uint32(info),
+		},
+	}
+}
+
 type NetlinkSocket struct {
 	fd  int
 	lsa syscall.SockaddrNetlink
+}
+
+func TcHMake(maj, min uint32) uint32 {
+	return (maj & TC_H_MAJ_MASK) | (min & TC_H_MIN_MASK)
 }
 
 func getNetlinkSocket(protocol int) (*NetlinkSocket, error) {
@@ -323,7 +680,7 @@ func (s *NetlinkSocket) Close() {
 	syscall.Close(s.fd)
 }
 
-func (s *NetlinkSocket) Send(request *NetlinkRequest) error {
+func (s *NetlinkSocket) Send(request CommonNetlinkRequest) error {
 	if err := syscall.Sendto(s.fd, request.Serialize(), 0, &s.lsa); err != nil {
 		return err
 	}

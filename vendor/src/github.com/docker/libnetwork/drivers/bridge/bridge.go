@@ -62,9 +62,10 @@ type networkConfiguration struct {
 
 // endpointConfiguration represents the user specified configuration for the sandbox endpoint
 type endpointConfiguration struct {
-	MacAddress   net.HardwareAddr
-	PortBindings []types.PortBinding
-	ExposedPorts []types.TransportPort
+	MacAddress     net.HardwareAddr
+	PortBindings   []types.PortBinding
+	ExposedPorts   []types.TransportPort
+	TrafficControl *types.TrafficControl
 }
 
 // containerConfiguration represents the user specified configuration for a container
@@ -894,13 +895,11 @@ func (d *driver) CreateEndpoint(nid, eid types.UUID, epInfo driverapi.EndpointIn
 	if err != nil {
 		return err
 	}
-
 	// Generate a name for what will be the sandbox side pipe interface
 	containerIfName, err := netutils.GenerateIfaceName(vethPrefix, vethLen)
 	if err != nil {
 		return err
 	}
-
 	// Generate and add the interface pipe host <-> sandbox
 	veth := &netlink.Veth{
 		LinkAttrs: netlink.LinkAttrs{Name: hostIfName, TxQLen: 0},
@@ -911,6 +910,7 @@ func (d *driver) CreateEndpoint(nid, eid types.UUID, epInfo driverapi.EndpointIn
 
 	// Get the host side pipe interface handler
 	host, err := netlink.LinkByName(hostIfName)
+	fmt.Println(hostIfName)
 	if err != nil {
 		return err
 	}
@@ -947,6 +947,14 @@ func (d *driver) CreateEndpoint(nid, eid types.UUID, epInfo driverapi.EndpointIn
 		}
 	}
 
+	if epConfig.TrafficControl != nil {
+		tc := epConfig.TrafficControl
+		err = netlink.LinkSetTrafficControl(host, int(tc.Rate), int(tc.Ceil), int(tc.Buffer), int(tc.Cbuffer))
+		if err != nil {
+			return err
+		}
+	}
+
 	// Attach host side pipe interface into the bridge
 	if err = addToBridge(hostIfName, config.BridgeName); err != nil {
 		return fmt.Errorf("adding interface %s to bridge %s failed: %v", hostIfName, config.BridgeName, err)
@@ -978,7 +986,6 @@ func (d *driver) CreateEndpoint(nid, eid types.UUID, epInfo driverapi.EndpointIn
 		return fmt.Errorf("could not set mac address for container interface %s: %v", containerIfName, err)
 	}
 	endpoint.macAddress = mac
-
 	// Up the host interface after finishing all netlink configuration
 	if err = netlink.LinkSetUp(host); err != nil {
 		return fmt.Errorf("could not set link up for host interface %s: %v", hostIfName, err)
@@ -1364,6 +1371,15 @@ func parseEndpointOptions(epOptions map[string]interface{}) (*endpointConfigurat
 	if opt, ok := epOptions[netlabel.ExposedPorts]; ok {
 		if ports, ok := opt.([]types.TransportPort); ok {
 			ec.ExposedPorts = ports
+		} else {
+			return nil, &ErrInvalidEndpointConfig{}
+		}
+	}
+
+	if opt, ok := epOptions[netlabel.TrafficControl]; ok {
+		if tc, ok := opt.(*types.TrafficControl); ok {
+			ec.TrafficControl = tc
+			fmt.Println(*tc)
 		} else {
 			return nil, &ErrInvalidEndpointConfig{}
 		}

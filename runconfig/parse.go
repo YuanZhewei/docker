@@ -2,6 +2,7 @@ package runconfig
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,65 @@ type validateNM struct {
 	flPublishAll   *bool
 	flExpose       opts.ListOpts
 	flVolumeDriver string
+}
+
+var rateSuffix = map[string]int64{
+	"bit":   1,
+	"Kibit": 1024,
+	"kbit":  1000,
+	"mibit": 1024 * 1024,
+	"mbit":  1000000,
+	"gibit": 1024 * 1024 * 1024,
+	"gbit":  1000000000,
+	"tibit": 1024 * 1024 * 1024 * 1024,
+	"tbit":  1000000000000,
+	"Bps":   8,
+	"KiBps": 8 * 1024,
+	"KBps":  8000,
+	"MiBps": 8 * 1024 * 1024,
+	"MBps":  8000000,
+	"GiBps": 8 * 1024 * 1024 * 1024,
+	"GBps":  8000000000,
+	"TiBps": 8 * 1024 * 1024 * 1024 * 1024,
+	"TBps":  8000000000000,
+}
+
+func parseRate(rateStr string) (int64, error) {
+	var i int
+	var rate int64 = 0
+	var rateUnits string
+	for i = 0; i < len(rateStr); i++ {
+		var v int64
+		d := rateStr[i]
+		if d <= '9' && d >= '0' {
+			v = int64(d - '0')
+			rate *= 10
+			rate1 := rate + v
+			if rate1 < rate || rate1 > math.MaxUint32 {
+				goto Error
+			}
+			rate = rate1
+		} else {
+			break
+		}
+	}
+
+	if i == 0 || i == len(rateStr) {
+		goto Error
+	}
+
+	rateUnits = rateStr[i:]
+
+	fmt.Println(rateUnits)
+	if mul, ok := rateSuffix[rateUnits]; ok {
+		rate *= mul
+	} else {
+		goto Error
+	}
+
+	return rate, nil
+Error:
+	return -1, fmt.Errorf("invalid rate: '%s', traffic rate should be between 0 and %d", rateStr, math.MaxUint32)
 }
 
 func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSet, error) {
@@ -100,6 +160,10 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		flLoggingDriver   = cmd.String([]string{"-log-driver"}, "", "Logging driver for container")
 		flCgroupParent    = cmd.String([]string{"-cgroup-parent"}, "", "Optional parent cgroup for the container")
 		flVolumeDriver    = cmd.String([]string{"-volume-driver"}, "", "Optional volume driver for the container")
+		flTcRate          = cmd.String([]string{"-tc-rate"}, "", "Traffic control rate allocated")
+		flTcCeil          = cmd.String([]string{"-tc-ceil"}, "", "Traffic control upper rate")
+		flTcBuffer        = cmd.String([]string{"-tc-buffer"}, "", "Traffic control max bytes burst which can be accumulated during idle period")
+		flTcCbuffer       = cmd.String([]string{"-tc-cbuffer"}, "", "Traffic control max bytes burst for ceil which can be accumulated during idle period")
 	)
 
 	cmd.Var(&flAttach, []string{"a", "-attach"}, "Attach to STDIN, STDOUT or STDERR")
@@ -212,6 +276,43 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 			return nil, nil, cmd, err
 		}
 	}
+
+	var tcRate, tcCeil, tcBuffer, tcCbuffer int64 = -1, 0, 0, 0
+	//var tc *TrafficControl = nil
+	if *flTcRate != "" {
+		var err error
+		if tcRate, err = parseRate(*flTcRate); err != nil {
+			return nil, nil, cmd, err
+		}
+		if *flTcCeil != "" {
+			if tcCeil, err = parseRate(*flTcCeil); err != nil {
+				return nil, nil, cmd, err
+			}
+		}
+		if *flTcBuffer != "" {
+			if tcBuffer, err = units.RAMInBytes(*flTcBuffer); err != nil {
+				return nil, nil, cmd, err
+			}
+		}
+		if *flTcCbuffer != "" {
+			if tcCbuffer, err = units.RAMInBytes(*flTcCbuffer); err != nil {
+				return nil, nil, cmd, err
+			}
+		}
+		//	if tcRate != -1 {
+		//		tc = &TrafficControl{
+		//			Rate:    tcRate,
+		//			Ceil:    tcCeil,
+		//			Buffer:  tcBuffer,
+		//			Cbuffer: tcCbuffer,
+		//		}
+		//	}
+	} else {
+		if *flTcCeil != "" || *flTcBuffer != "" || *flTcCbuffer != "" {
+			return nil, nil, cmd, fmt.Errorf("Redundant traffic control options")
+		}
+	}
+
 	var binds []string
 	// add any bind targets to the list of container volumes
 	for bind := range flVolumes.GetMap() {
@@ -396,6 +497,11 @@ func Parse(cmd *flag.FlagSet, args []string) (*Config, *HostConfig, *flag.FlagSe
 		Ulimits:                      flUlimits.GetList(),
 		LogConfig:                    LogConfig{Type: *flLoggingDriver, Config: loggingOpts},
 		CgroupParent:                 *flCgroupParent,
+		//TrafficControl:               tc,
+		TcRate:    tcRate,
+		TcCeil:    tcCeil,
+		TcBuffer:  tcBuffer,
+		TcCbuffer: tcCbuffer,
 	}
 
 	applyExperimentalFlags(expFlags, config, hostConfig)

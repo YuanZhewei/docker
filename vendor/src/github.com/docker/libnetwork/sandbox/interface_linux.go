@@ -9,21 +9,23 @@ import (
 
 	"github.com/docker/libnetwork/types"
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
 )
 
 // IfaceOption is a function option type to set interface options
 type IfaceOption func(i *nwIface)
 
 type nwIface struct {
-	srcName     string
-	dstName     string
-	master      string
-	dstMaster   string
-	address     *net.IPNet
-	addressIPv6 *net.IPNet
-	routes      []*net.IPNet
-	bridge      bool
-	ns          *networkNamespace
+	srcName        string
+	dstName        string
+	master         string
+	dstMaster      string
+	address        *net.IPNet
+	addressIPv6    *net.IPNet
+	routes         []*net.IPNet
+	bridge         bool
+	ns             *networkNamespace
+	trafficControl *types.TrafficControl
 	sync.Mutex
 }
 
@@ -235,7 +237,23 @@ func (n *networkNamespace) AddInterface(srcName, dstPrefix string, options ...If
 		if err := netlink.LinkSetNsFd(iface, nsFD); err != nil {
 			return fmt.Errorf("failed to set namespace on link %q: %v", i.srcName, err)
 		}
+		var initNs netns.NsHandle
+		if initNs, err = netns.Get(); err != nil {
+			return fmt.Errorf("could not get initial namespace: %v", err)
+		}
 
+		if err = netns.Set(netns.NsHandle(nsFD)); err != nil {
+			return err
+		}
+
+		if i.trafficControl != nil {
+			tc := i.trafficControl
+			err = netlink.LinkSetTrafficControl(iface, int(tc.Rate), int(tc.Ceil), int(tc.Buffer), int(tc.Cbuffer))
+			if err != nil {
+				return err
+			}
+		}
+		defer netns.Set(initNs)
 		return nil
 	}, func(callerFD int) error {
 		if i.bridge {

@@ -523,6 +523,18 @@ func (container *Container) buildJoinOptions() ([]libnetwork.EndpointOption, err
 
 	joinOptions = append(joinOptions, libnetwork.JoinOptionGeneric(linkOptions))
 
+	if tcRate := container.hostConfig.TcRate; tcRate != -1 {
+		tc := &types.TrafficControl{
+			Rate:    container.hostConfig.TcRate,
+			Ceil:    container.hostConfig.TcCeil,
+			Buffer:  container.hostConfig.TcBuffer,
+			Cbuffer: container.hostConfig.TcCbuffer,
+		}
+		genericOption := options.Generic{
+			netlabel.TrafficControl: tc,
+		}
+		joinOptions = append(joinOptions, libnetwork.EndpointOptionGeneric(genericOption))
+	}
 	return joinOptions, nil
 }
 
@@ -777,6 +789,19 @@ func (container *Container) buildCreateEndpointOptions() ([]libnetwork.EndpointO
 			netlabel.MacAddress: mac,
 		}
 
+		createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(genericOption))
+	}
+
+	if tcRate := container.hostConfig.TcRate; tcRate != -1 {
+		tc := &types.TrafficControl{
+			Rate:    container.hostConfig.TcRate,
+			Ceil:    container.hostConfig.TcCeil,
+			Buffer:  container.hostConfig.TcBuffer,
+			Cbuffer: container.hostConfig.TcCbuffer,
+		}
+		genericOption := options.Generic{
+			netlabel.TrafficControl: tc,
+		}
 		createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(genericOption))
 	}
 

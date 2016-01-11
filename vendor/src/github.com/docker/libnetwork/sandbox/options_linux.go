@@ -1,6 +1,10 @@
 package sandbox
 
-import "net"
+import (
+	"net"
+
+	"github.com/docker/libnetwork/types"
+)
 
 func (nh *neigh) processNeighOptions(options ...NeighOption) {
 	for _, opt := range options {
@@ -57,5 +61,11 @@ func (n *networkNamespace) AddressIPv6(addr *net.IPNet) IfaceOption {
 func (n *networkNamespace) Routes(routes []*net.IPNet) IfaceOption {
 	return func(i *nwIface) {
 		i.routes = routes
+	}
+}
+
+func (n *networkNamespace) TrafficControl(tc *types.TrafficControl) IfaceOption {
+	return func(i *nwIface) {
+		i.trafficControl = tc
 	}
 }
