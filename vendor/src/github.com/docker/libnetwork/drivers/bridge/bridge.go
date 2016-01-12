@@ -910,7 +910,6 @@ func (d *driver) CreateEndpoint(nid, eid types.UUID, epInfo driverapi.EndpointIn
 
 	// Get the host side pipe interface handler
 	host, err := netlink.LinkByName(hostIfName)
-	fmt.Println(hostIfName)
 	if err != nil {
 		return err
 	}
@@ -1379,7 +1378,6 @@ func parseEndpointOptions(epOptions map[string]interface{}) (*endpointConfigurat
 	if opt, ok := epOptions[netlabel.TrafficControl]; ok {
 		if tc, ok := opt.(*types.TrafficControl); ok {
 			ec.TrafficControl = tc
-			fmt.Println(*tc)
 		} else {
 			return nil, &ErrInvalidEndpointConfig{}
 		}

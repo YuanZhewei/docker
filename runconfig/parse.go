@@ -85,9 +85,15 @@ func parseRate(rateStr string) (int64, error) {
 
 	rateUnits = rateStr[i:]
 
-	fmt.Println(rateUnits)
 	if mul, ok := rateSuffix[rateUnits]; ok {
-		rate *= mul
+		rate1 := rate * mul
+		if rate1 < rate || rate1 > math.MaxUint32 {
+			goto Error
+		}
+		rate = rate1 / 8
+		if rate == 0 {
+			goto Error
+		}
 	} else {
 		goto Error
 	}

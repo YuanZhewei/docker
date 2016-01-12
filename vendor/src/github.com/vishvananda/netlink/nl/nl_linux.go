@@ -522,7 +522,6 @@ done:
 				if error == 0 {
 					break done
 				}
-				fmt.Println("Error ", error)
 				return nil, syscall.Errno(-error)
 			}
 			if resType != 0 && m.Header.Type != resType {
@@ -577,7 +576,6 @@ done:
 				if error == 0 {
 					break done
 				}
-				fmt.Println("Error ", error)
 				return nil, syscall.Errno(-error)
 			}
 			if resType != 0 && m.Header.Type != resType {
